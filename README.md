@@ -35,6 +35,7 @@ upload-drive-script/
 
 * Go 1.20+
 * Conta Google com OAuth2 credentials (JSON)
+* Variáveis de ambiente opcionais para customização (ver seção Configuração)
 
 ---
 
@@ -59,13 +60,33 @@ go mod tidy
 go build -o upload-drive-script ./cmd
 ```
 
-4. Execute:
+4. Execute (ajuste os valores conforme o ambiente):
 
 ```bash
-./upload-drive-script
+HTTP_LISTEN_ADDR=:3000 ./upload-drive-script
 ```
 
 O servidor vai iniciar em `http://localhost:3000`.
+
+---
+
+## 🔧 Configuração via variáveis de ambiente
+
+| Variável                     | Descrição                                               | Padrão                               |
+|------------------------------|---------------------------------------------------------|--------------------------------------|
+| `GOOGLE_CREDENTIALS_FILE`    | Caminho para o JSON de credenciais OAuth                | `credentials.json`                   |
+| `GOOGLE_TOKEN_FILE`          | Caminho onde o token OAuth autorizado será persistido   | `token.json`                         |
+| `GOOGLE_OAUTH_REDIRECT_URL`  | URL callback registrada no console Google               | `http://localhost:3000/oauth2callback` |
+| `GOOGLE_OAUTH_STATE`         | Valor de state usado na autorização OAuth               | `state-token`                        |
+| `HTTP_LISTEN_ADDR`           | Endereço/porta que o servidor HTTP deve escutar         | `:3000`                              |
+
+Defina as variáveis antes de executar o binário:
+
+```bash
+export GOOGLE_CREDENTIALS_FILE=./secrets/credentials.json
+export HTTP_LISTEN_ADDR=:8080
+./upload-drive-script
+```
 
 ---
 
@@ -128,5 +149,5 @@ curl -X POST http://localhost:3000/upload-url \
 
 ## ⚡ Observações
 
-* Para arquivos muito grandes (>1GB), o upload é **resumable** e dividido em chunks de 10MB
-* Tokens OAuth2 são salvos em `token.json` para reutilização
+* Para arquivos muito grandes (>1GB), o upload é **resumable** e dividido em chunks de 10MB.
+* Tokens OAuth2 são salvos no arquivo definido por `GOOGLE_TOKEN_FILE`; mantenha-o fora do controle de versão.
