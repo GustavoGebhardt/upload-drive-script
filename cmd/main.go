@@ -1,7 +1,9 @@
 package main
 
 import (
+	"upload-drive-script/internal/config"
 	"upload-drive-script/internal/handlers"
+	"upload-drive-script/pkg/logger"
 
 	"github.com/gin-gonic/gin"
 )
@@ -16,6 +18,7 @@ func main() {
 	r.POST("/upload", handlers.Upload)
 	r.POST("/upload-url", handlers.UploadURL)
 
-	r.Run(":3000")
-
+	if err := r.Run(config.ServerAddr()); err != nil {
+		logger.Error("erro ao iniciar servidor: " + err.Error())
+	}
 }

@@ -3,7 +3,7 @@ package services
 import (
 	"context"
 	"encoding/json"
-	"log"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -16,48 +16,60 @@ import (
 	"upload-drive-script/internal/config"
 )
 
-func GetDriveServiceConfig() *oauth2.Config {
-	b, err := os.ReadFile(config.CredentialsFile)
+func GetDriveServiceConfig() (*oauth2.Config, error) {
+	b, err := os.ReadFile(config.CredentialsFile())
 	if err != nil {
-		log.Fatalf("Erro ao ler credenciais: %v", err)
+		return nil, fmt.Errorf("ler credenciais: %w", err)
 	}
 
 	conf, err := google.ConfigFromJSON(b, drive.DriveFileScope)
 	if err != nil {
-		log.Fatalf("Erro ao criar config OAuth2: %v", err)
+		return nil, fmt.Errorf("criar config OAuth2: %w", err)
 	}
 
-	conf.RedirectURL = "http://localhost:3000/oauth2callback"
-	return conf
+	conf.RedirectURL = config.OAuthRedirectURL()
+	return conf, nil
 }
 
-func GetAuthURL() string {
-	conf := GetDriveServiceConfig()
-	return conf.AuthCodeURL("state-token", oauth2.AccessTypeOffline)
-}
-
-func SaveToken(token *oauth2.Token) {
-	f, err := os.Create(config.TokenFile)
+func GetAuthURL() (string, error) {
+	conf, err := GetDriveServiceConfig()
 	if err != nil {
-		log.Fatalf("Erro ao criar token: %v", err)
+		return "", err
+	}
+	return conf.AuthCodeURL(config.OAuthState(), oauth2.AccessTypeOffline), nil
+}
+
+func SaveToken(token *oauth2.Token) error {
+	f, err := os.Create(config.TokenFile())
+	if err != nil {
+		return fmt.Errorf("criar arquivo de token: %w", err)
 	}
 	defer f.Close()
-	json.NewEncoder(f).Encode(token)
+
+	if err := json.NewEncoder(f).Encode(token); err != nil {
+		return fmt.Errorf("persistir token: %w", err)
+	}
+	return nil
 }
 
 func LoadToken() (*oauth2.Token, error) {
-	f, err := os.Open(config.TokenFile)
+	f, err := os.Open(config.TokenFile())
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
 	tok := &oauth2.Token{}
-	err = json.NewDecoder(f).Decode(tok)
-	return tok, err
+	if err := json.NewDecoder(f).Decode(tok); err != nil {
+		return nil, fmt.Errorf("ler token salvo: %w", err)
+	}
+	return tok, nil
 }
 
 func GetDriveClient() (*http.Client, error) {
-	conf := GetDriveServiceConfig()
+	conf, err := GetDriveServiceConfig()
+	if err != nil {
+		return nil, err
+	}
 	tok, err := LoadToken()
 	if err != nil {
 		return nil, err
