@@ -18,7 +18,7 @@ func main() {
 	r.POST("/upload", handlers.Upload)
 	r.POST("/upload-url", handlers.UploadURL)
 
-	if err := r.Run(config.ServerAddr()); err != nil {
+	if err := r.Run(config.ServerPort()); err != nil {
 		logger.Error("erro ao iniciar servidor: " + err.Error())
 	}
 }
