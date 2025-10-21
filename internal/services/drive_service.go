@@ -115,7 +115,7 @@ func GetDriveService() (*drive.Service, error) {
 	return drive.NewService(context.Background(), option.WithHTTPClient(client))
 }
 
-func UploadFile(filePath string, folderID string) (string, error) {
+func UploadFile(filePath string, folderID string, fileName string) (string, error) {
 	srv, err := GetDriveService()
 	if err != nil {
 		return "", err
@@ -127,8 +127,12 @@ func UploadFile(filePath string, folderID string) (string, error) {
 	}
 	defer f.Close()
 
+	if fileName == "" {
+		fileName = filepath.Base(filePath)
+	}
+
 	file := &drive.File{
-		Name: filepath.Base(filePath),
+		Name: fileName,
 	}
 	if folderID != "" {
 		file.Parents = []string{folderID}
