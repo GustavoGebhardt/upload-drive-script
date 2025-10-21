@@ -41,6 +41,8 @@ upload-drive-script/
 
 ## 💻 Build e execução
 
+### Ambiente local (Go)
+
 1. Clone o repositório:
 
 ```bash
@@ -67,6 +69,33 @@ HTTP_LISTEN_ADDR=:3000 ./upload-drive-script
 ```
 
 O servidor vai iniciar em `http://localhost:3000`.
+
+### Utilizando Docker
+
+1. Construa a imagem localmente:
+
+```bash
+docker build -t upload-drive-script .
+```
+
+2. Crie um arquivo `.env` com as variáveis necessárias (ajuste conforme seu ambiente):
+
+```bash
+APP_SERVER_PORT=:3000
+GOOGLE_CREDENTIALS_FILE=credentials.json
+GOOGLE_TOKEN_FILE=token.json
+```
+
+3. Execute o container em segundo plano expondo a porta 3000, carregando o `.env` e montando as credenciais:
+
+```bash
+docker run -d -p 3000:3000 \
+  --name upload-drive-script \
+  --env-file .env \
+  upload-drive-script
+```
+
+4. Ajuste variáveis ou mounts conforme necessário (por exemplo `GOOGLE_TOKEN_FILE`, `APP_SERVER_PORT` ou outro caminho de credenciais). O serviço seguirá disponível em `http://localhost:3000`. Pare o container com `docker stop upload-drive-script`.
 
 ---
 
@@ -118,13 +147,15 @@ http://localhost:3000/auth
 | ----------- | ------------------------------- |
 | `file`      | Arquivo a ser enviado           |
 | `folder_id` | (Opcional) ID da pasta no Drive |
+| `file_name` | (Opcional) Nome do arquivo no Drive |
 
 **Exemplo curl:**
 
 ```bash
 curl -X POST http://localhost:3000/upload \
   -F "file=@/caminho/para/arquivo.mp3" \
-  -F "folder_id=ID_DA_PASTA"
+  -F "folder_id=ID_DA_PASTA" \
+  -F "file_name=novo-nome.mp3"
 ```
 
 ---
@@ -139,13 +170,15 @@ curl -X POST http://localhost:3000/upload \
 | ----------- | ------------------------------- |
 | `url`       | URL pública do arquivo          |
 | `folder_id` | (Opcional) ID da pasta no Drive |
+| `file_name` | (Opcional) Nome do arquivo no Drive |
 
 **Exemplo curl:**
 
 ```bash
 curl -X POST http://localhost:3000/upload-url \
   -d "url=https://example.com/audio.mp3" \
-  -d "folder_id=ID_DA_PASTA"
+  -d "folder_id=ID_DA_PASTA" \
+  -d "file_name=novo-nome.mp3"
 ```
 
 ---
