@@ -17,6 +17,10 @@ import (
 )
 
 func GetDriveServiceConfig() (*oauth2.Config, error) {
+	if config.AuthenticationMode() == config.AuthModeServiceAccount {
+		return nil, fmt.Errorf("configuração OAuth indisponível no modo service_account")
+	}
+
 	b, err := os.ReadFile(config.CredentialsFile())
 	if err != nil {
 		return nil, fmt.Errorf("ler credenciais: %w", err)
@@ -27,11 +31,15 @@ func GetDriveServiceConfig() (*oauth2.Config, error) {
 		return nil, fmt.Errorf("criar config OAuth2: %w", err)
 	}
 
-	conf.RedirectURL = fmt.Sprintf("http://%s%d/oauth2callback", config.BaseURL())
+	conf.RedirectURL = fmt.Sprintf("http://%s%s/oauth2callback", config.BaseURL(), config.ServerPort())
 	return conf, nil
 }
 
 func GetAuthURL() (string, error) {
+	if config.AuthenticationMode() == config.AuthModeServiceAccount {
+		return "", fmt.Errorf("rota de auth indisponível no modo service_account")
+	}
+
 	conf, err := GetDriveServiceConfig()
 	if err != nil {
 		return "", err
@@ -66,6 +74,14 @@ func LoadToken() (*oauth2.Token, error) {
 }
 
 func GetDriveClient() (*http.Client, error) {
+	if config.AuthenticationMode() == config.AuthModeServiceAccount {
+		return getServiceAccountClient()
+	}
+
+	return getOAuthClient()
+}
+
+func getOAuthClient() (*http.Client, error) {
 	conf, err := GetDriveServiceConfig()
 	if err != nil {
 		return nil, err
@@ -75,6 +91,20 @@ func GetDriveClient() (*http.Client, error) {
 		return nil, err
 	}
 	return conf.Client(context.Background(), tok), nil
+}
+
+func getServiceAccountClient() (*http.Client, error) {
+	credentialsJSON, err := os.ReadFile(config.CredentialsFile())
+	if err != nil {
+		return nil, fmt.Errorf("ler credenciais: %w", err)
+	}
+
+	creds, err := google.CredentialsFromJSON(context.Background(), credentialsJSON, drive.DriveFileScope)
+	if err != nil {
+		return nil, fmt.Errorf("criar credenciais de service account: %w", err)
+	}
+
+	return oauth2.NewClient(context.Background(), creds.TokenSource), nil
 }
 
 func GetDriveService() (*drive.Service, error) {
