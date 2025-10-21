@@ -72,13 +72,14 @@ O servidor vai iniciar em `http://localhost:3000`.
 
 ## 🔧 Configuração via variáveis de ambiente
 
-| Variável                     | Descrição                                               | Padrão                               |
-|------------------------------|---------------------------------------------------------|--------------------------------------|
-| `GOOGLE_CREDENTIALS_FILE`    | Caminho para o JSON de credenciais OAuth                | `credentials.json`                   |
-| `GOOGLE_TOKEN_FILE`          | Caminho onde o token OAuth autorizado será persistido   | `token.json`                         |
-| `GOOGLE_OAUTH_REDIRECT_URL`  | URL callback registrada no console Google               | `http://localhost:3000/oauth2callback` |
-| `GOOGLE_OAUTH_STATE`         | Valor de state usado na autorização OAuth               | `state-token`                        |
-| `HTTP_LISTEN_ADDR`           | Endereço/porta que o servidor HTTP deve escutar         | `:3000`                              |
+| Variável                  | Descrição                                            | Padrão                               |
+|---------------------------|------------------------------------------------------|--------------------------------------|
+| `GOOGLE_CREDENTIALS_FILE` | Caminho para o JSON de credenciais OAuth             | `credentials.json`                   |
+| `GOOGLE_AUTH_MODE`        | Tipo de autenticação: `oauth` ou `service_account`   | `oauth`                              |
+| `GOOGLE_TOKEN_FILE`       | Caminho onde o token OAuth autorizado será persistido | `token.json`                         |
+| `APP_BASE_URL`            | URL base da aplicação                                | `localhost`                          |
+| `GOOGLE_OAUTH_STATE`      | Valor de state usado na autorização OAuth            | `state-token`                        |
+| `APP_SERVER_PORT`         | Endereço/porta que o servidor HTTP deve escutar      | `:3000`                              |
 
 Defina as variáveis antes de executar o binário:
 
@@ -91,6 +92,8 @@ export HTTP_LISTEN_ADDR=:8080
 ---
 
 ## 🔑 Autenticação Google Drive
+
+> Este fluxo é necessário apenas quando `GOOGLE_AUTH_MODE=oauth`. Ao usar `service_account`, não há etapa manual de autorização.
 
 1. Com o navegador acesse a rota `/auth`:
 
@@ -151,3 +154,4 @@ curl -X POST http://localhost:3000/upload-url \
 
 * Para arquivos muito grandes (>1GB), o upload é **resumable** e dividido em chunks de 10MB.
 * Tokens OAuth2 são salvos no arquivo definido por `GOOGLE_TOKEN_FILE`; mantenha-o fora do controle de versão.
+* Defina `GOOGLE_AUTH_MODE=service_account` para usar uma Service Account; nesse modo as rotas `/auth` e `/oauth2callback` não ficam disponíveis e o arquivo definido em `GOOGLE_CREDENTIALS_FILE` deve conter o JSON da Service Account.
