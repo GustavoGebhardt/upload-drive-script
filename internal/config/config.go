@@ -5,9 +5,9 @@ import "os"
 const (
 	defaultCredentialsFile = "credentials.json"
 	defaultTokenFile       = "token.json"
-	defaultRedirectURL     = "http://localhost:3000/oauth2callback"
 	defaultOAuthState      = "state-token"
-	defaultServerAddr      = ":3000"
+	defaultBaseURL         = "localhost"
+	defaultServerPort      = ":3000"
 )
 
 func CredentialsFile() string {
@@ -18,16 +18,14 @@ func TokenFile() string {
 	return envOrDefault("GOOGLE_TOKEN_FILE", defaultTokenFile)
 }
 
-func OAuthRedirectURL() string {
-	return envOrDefault("GOOGLE_OAUTH_REDIRECT_URL", defaultRedirectURL)
-}
-
 func OAuthState() string {
 	return envOrDefault("GOOGLE_OAUTH_STATE", defaultOAuthState)
 }
 
-func ServerAddr() string {
-	return envOrDefault("HTTP_LISTEN_ADDR", defaultServerAddr)
+func BaseURL() string { return envOrDefault("APP_BASE_URL", defaultBaseURL) }
+
+func ServerPort() string {
+	return envOrDefault("APP_SERVER_PORT", defaultServerPort)
 }
 
 func envOrDefault(key, defaultValue string) string {
