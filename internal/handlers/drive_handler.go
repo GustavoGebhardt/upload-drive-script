@@ -74,7 +74,9 @@ func Upload(c *gin.Context) {
 
 	folderID := c.PostForm("folder_id")
 
-	fileID, err := services.UploadFile(tempPath, folderID)
+	fileName := c.PostForm("file_name")
+
+	fileID, err := services.UploadFile(tempPath, folderID, fileName)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -149,7 +151,9 @@ func UploadURL(c *gin.Context) {
 
 	folderID := c.PostForm("folder_id")
 
-	fileID, err := services.UploadFile(tempPath, folderID)
+	fileName := c.PostForm("file_name")
+
+	fileID, err := services.UploadFile(tempPath, folderID, fileName)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
