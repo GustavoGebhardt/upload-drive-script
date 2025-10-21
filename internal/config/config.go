@@ -1,6 +1,16 @@
 package config
 
-import "os"
+import (
+	"os"
+	"strings"
+)
+
+type AuthMode string
+
+const (
+	AuthModeOAuth          AuthMode = "oauth"
+	AuthModeServiceAccount AuthMode = "service_account"
+)
 
 const (
 	defaultCredentialsFile = "credentials.json"
@@ -8,6 +18,7 @@ const (
 	defaultOAuthState      = "state-token"
 	defaultBaseURL         = "localhost"
 	defaultServerPort      = ":3000"
+	defaultAuthMode        = AuthModeOAuth
 )
 
 func CredentialsFile() string {
@@ -26,6 +37,18 @@ func BaseURL() string { return envOrDefault("APP_BASE_URL", defaultBaseURL) }
 
 func ServerPort() string {
 	return envOrDefault("APP_SERVER_PORT", defaultServerPort)
+}
+
+func AuthenticationMode() AuthMode {
+	value := strings.ToLower(envOrDefault("GOOGLE_AUTH_MODE", string(defaultAuthMode)))
+	mode := AuthMode(value)
+
+	switch mode {
+	case AuthModeOAuth, AuthModeServiceAccount:
+		return mode
+	default:
+		return defaultAuthMode
+	}
 }
 
 func envOrDefault(key, defaultValue string) string {
