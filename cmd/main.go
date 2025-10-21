@@ -13,8 +13,10 @@ func main() {
 
 	r.MaxMultipartMemory = 500 << 20
 
-	r.GET("/auth", handlers.Auth)
-	r.GET("/oauth2callback", handlers.OAuth2Callback)
+	if config.AuthenticationMode() == config.AuthModeOAuth {
+		r.GET("/auth", handlers.Auth)
+		r.GET("/oauth2callback", handlers.OAuth2Callback)
+	}
 	r.POST("/upload", handlers.Upload)
 	r.POST("/upload-url", handlers.UploadURL)
 
