@@ -27,7 +27,7 @@ func GetDriveServiceConfig() (*oauth2.Config, error) {
 		return nil, fmt.Errorf("criar config OAuth2: %w", err)
 	}
 
-	conf.RedirectURL = config.OAuthRedirectURL()
+	conf.RedirectURL = fmt.Sprintf("http://%s%d/oauth2callback", config.BaseURL())
 	return conf, nil
 }
 
