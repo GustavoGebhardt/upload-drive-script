@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -58,16 +60,22 @@ func Upload(c *gin.Context) {
 		return
 	}
 
-	tempFile, err := os.CreateTemp("", "upload-*"+filepath.Ext(file.Filename))
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Falha ao preparar arquivo temporário"})
+	const uploadDir = "upload"
+
+	if err := os.MkdirAll(uploadDir, 0o755); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Falha ao preparar diretório de upload"})
 		return
 	}
-	tempPath := tempFile.Name()
-	tempFile.Close()
-	defer os.Remove(tempPath)
 
-	if err := c.SaveUploadedFile(file, tempPath); err != nil {
+	fileNameOnDisk, err := sanitizeFilename(file.Filename)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	fileNameOnDisk = ensureUniqueFilename(uploadDir, fileNameOnDisk)
+	filePath := filepath.Join(uploadDir, fileNameOnDisk)
+
+	if err := c.SaveUploadedFile(file, filePath); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -76,13 +84,16 @@ func Upload(c *gin.Context) {
 
 	fileName := c.PostForm("file_name")
 
-	fileID, err := services.UploadFile(tempPath, folderID, fileName)
+	fileID, err := services.UploadFile(filePath, folderID, fileName)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"file_id": fileID})
+	c.JSON(http.StatusOK, gin.H{
+		"file_id":  fileID,
+		"file_url": buildPublicFileURL(c, fileNameOnDisk),
+	})
 }
 
 func UploadURL(c *gin.Context) {
@@ -160,4 +171,84 @@ func UploadURL(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"file_id": fileID})
+}
+
+func GetUploadedFile(c *gin.Context) {
+	fileNameParam := c.Param("filename")
+
+	fileName, err := sanitizeFilename(fileNameParam)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Nome de arquivo inválido"})
+		return
+	}
+
+	const uploadDir = "upload"
+
+	filePath := filepath.Join(uploadDir, fileName)
+
+	if _, err := os.Stat(filePath); errors.Is(err, os.ErrNotExist) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Arquivo não encontrado"})
+		return
+	} else if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Erro ao acessar arquivo"})
+		return
+	}
+
+	c.File(filePath)
+}
+
+func sanitizeFilename(name string) (string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", errors.New("Nome de arquivo inválido")
+	}
+
+	cleanName := filepath.Base(name)
+	if cleanName == "." || cleanName == ".." || cleanName == "" {
+		return "", errors.New("Nome de arquivo inválido")
+	}
+
+	if strings.ContainsAny(cleanName, "/\\") {
+		return "", errors.New("Nome de arquivo inválido")
+	}
+
+	return cleanName, nil
+}
+
+func ensureUniqueFilename(dir, name string) string {
+	ext := filepath.Ext(name)
+	base := strings.TrimSuffix(name, ext)
+	candidate := name
+	counter := 1
+
+	for {
+		if _, err := os.Stat(filepath.Join(dir, candidate)); errors.Is(err, os.ErrNotExist) {
+			return candidate
+		}
+
+		candidate = fmt.Sprintf("%s-%d%s", base, counter, ext)
+		counter++
+	}
+}
+
+func buildPublicFileURL(c *gin.Context, filename string) string {
+	scheme := c.Request.Header.Get("X-Forwarded-Proto")
+	if scheme == "" {
+		if c.Request.TLS != nil {
+			scheme = "https"
+		} else {
+			scheme = "http"
+		}
+	}
+
+	host := c.Request.Header.Get("X-Forwarded-Host")
+	if host == "" {
+		host = c.Request.Host
+	}
+
+	if host == "" {
+		return "/uploads/" + url.PathEscape(filename)
+	}
+
+	return scheme + "://" + host + "/uploads/" + url.PathEscape(filename)
 }
