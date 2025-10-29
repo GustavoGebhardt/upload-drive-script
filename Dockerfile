@@ -15,6 +15,7 @@ WORKDIR /app
 
 COPY --from=builder /app/upload-drive-script .
 COPY --from=builder /app/credentials.json .
+RUN mkdir -p /app/upload
 
 EXPOSE 3000
 
