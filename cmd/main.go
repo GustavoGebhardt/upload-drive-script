@@ -19,6 +19,7 @@ func main() {
 	}
 	r.POST("/upload", handlers.Upload)
 	r.POST("/upload-url", handlers.UploadURL)
+	r.GET("/uploads/:filename", handlers.GetUploadedFile)
 
 	if err := r.Run(config.ServerPort()); err != nil {
 		logger.Error("erro ao iniciar servidor: " + err.Error())
