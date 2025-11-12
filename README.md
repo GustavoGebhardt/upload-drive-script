@@ -36,6 +36,7 @@ upload-drive-script/
 * Go 1.20+
 * Conta Google com OAuth2 credentials (JSON)
 * Variáveis de ambiente opcionais para customização (ver seção Configuração)
+* `ffmpeg` instalado no host (necessário para extrair o áudio dos vídeos)
 
 ---
 
@@ -158,6 +159,8 @@ curl -X POST http://localhost:3000/upload \
   -F "file_name=novo-nome.mp3"
 ```
 
+Se o arquivo for um vídeo, o backend extrai o áudio automaticamente e envia ao Drive, retornando também `audio_file_id` na resposta.
+
 ---
 
 ### 2. Upload via URL
@@ -180,6 +183,8 @@ curl -X POST http://localhost:3000/upload-url \
   -d "folder_id=ID_DA_PASTA" \
   -d "file_name=novo-nome.mp3"
 ```
+
+Uploads de vídeo via URL seguem o mesmo fluxo: o arquivo de vídeo é enviado e o áudio extraído é enviado separadamente, retornando `audio_file_id` quando aplicável.
 
 ---
 
