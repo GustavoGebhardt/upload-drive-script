@@ -5,3 +5,4 @@ token.json
 .env
 upload/*
 !upload/.gitkeep
+.gocache
