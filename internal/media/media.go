@@ -34,6 +34,10 @@ func IsVideoMime(mime string) bool {
 	return strings.HasPrefix(mime, "video/")
 }
 
+func IsAudioMime(mime string) bool {
+	return strings.HasPrefix(mime, "audio/")
+}
+
 // ExtractAudio uses ffmpeg to extract an audio track from a video file.
 // Returns the path to the generated audio file (caller must remove it).
 func ExtractAudio(srcPath string) (string, error) {
