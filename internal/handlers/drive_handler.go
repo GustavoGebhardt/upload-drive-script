@@ -15,9 +15,12 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"upload-drive-script/internal/config"
 	"upload-drive-script/internal/media"
 	"upload-drive-script/internal/services"
 )
+
+var errUnsupportedMediaType = errors.New("tipo de arquivo não suportado")
 
 func Auth(c *gin.Context) {
 	url, err := services.GetAuthURL()
@@ -90,34 +93,15 @@ func Upload(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	isVideo := media.IsVideoMime(mimeType)
-
-	fileID, err := services.UploadFile(filePath, folderID, fileName)
+	response, err := buildUploadResponse(c, uploadDir, filePath, fileNameOnDisk, folderID, fileName, mimeType)
 	if err != nil {
+		if errors.Is(err, errUnsupportedMediaType) {
+			_ = os.Remove(filePath)
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Apenas arquivos de áudio ou vídeo são permitidos"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
-	}
-
-	response := gin.H{
-		"file_id":  fileID,
-		"file_url": buildPublicFileURL(c, fileNameOnDisk),
-	}
-
-	if isVideo {
-		audioPath, err := media.ExtractAudio(filePath)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-		defer os.Remove(audioPath)
-
-		audioFileName := media.BuildAudioFileName(fileName, filePath)
-		audioFileID, err := services.UploadFile(audioPath, folderID, audioFileName)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-		response["audio_file_id"] = audioFileID
 	}
 
 	c.JSON(http.StatusOK, response)
@@ -170,20 +154,16 @@ func UploadURL(c *gin.Context) {
 	}
 	defer resp.Body.Close()
 
-	ext := filepath.Ext(parsedURL.Path)
-	tempFile, err := os.CreateTemp("", "upload-*"+ext)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Não foi possível criar arquivo temporário"})
+	const uploadDir = "upload"
+
+	if err := os.MkdirAll(uploadDir, 0o755); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Falha ao preparar diretório de upload"})
 		return
 	}
-	defer tempFile.Close()
 
-	tempPath := tempFile.Name()
-	defer os.Remove(tempPath)
-
-	_, err = io.Copy(tempFile, resp.Body)
+	fileNameOnDisk, filePath, err := saveRemoteFile(resp.Body, uploadDir, parsedURL.Path)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Erro ao salvar arquivo temporário"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -191,36 +171,22 @@ func UploadURL(c *gin.Context) {
 
 	fileName := c.PostForm("file_name")
 
-	mimeType, err := media.DetectMimeType(tempPath)
+	mimeType, err := media.DetectMimeType(filePath)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	isVideo := media.IsVideoMime(mimeType)
-
-	fileID, err := services.UploadFile(tempPath, folderID, fileName)
-	if err != nil {
+		_ = os.Remove(filePath)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	response := gin.H{"file_id": fileID}
-
-	if isVideo {
-		audioPath, err := media.ExtractAudio(tempPath)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	response, err := buildUploadResponse(c, uploadDir, filePath, fileNameOnDisk, folderID, fileName, mimeType)
+	if err != nil {
+		_ = os.Remove(filePath)
+		if errors.Is(err, errUnsupportedMediaType) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Apenas arquivos de áudio ou vídeo são permitidos"})
 			return
 		}
-		defer os.Remove(audioPath)
-
-		audioFileName := media.BuildAudioFileName(fileName, filepath.Base(parsedURL.Path))
-		audioFileID, err := services.UploadFile(audioPath, folderID, audioFileName)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-		response["audio_file_id"] = audioFileID
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
 	}
 
 	c.JSON(http.StatusOK, response)
@@ -285,6 +251,11 @@ func ensureUniqueFilename(dir, name string) string {
 }
 
 func buildPublicFileURL(c *gin.Context, filename string) string {
+	if baseURL, ok := config.PublicBaseURL(); ok {
+		prefix := strings.TrimSuffix(baseURL.String(), "/")
+		return prefix + "/uploads/" + url.PathEscape(filename)
+	}
+
 	scheme := c.Request.Header.Get("X-Forwarded-Proto")
 	if scheme == "" {
 		if c.Request.TLS != nil {
@@ -304,4 +275,147 @@ func buildPublicFileURL(c *gin.Context, filename string) string {
 	}
 
 	return scheme + "://" + host + "/uploads/" + url.PathEscape(filename)
+}
+
+func buildUploadResponse(
+	c *gin.Context,
+	uploadDir string,
+	filePath string,
+	fileNameOnDisk string,
+	folderID string,
+	driveFileName string,
+	mimeType string,
+) (gin.H, error) {
+	isVideo := media.IsVideoMime(mimeType)
+	isAudio := media.IsAudioMime(mimeType)
+
+	if !isVideo && !isAudio {
+		return nil, errUnsupportedMediaType
+	}
+
+	response := gin.H{
+		"video_file_id":  nil,
+		"audio_file_id":  nil,
+		"video_file_url": nil,
+		"audio_file_url": nil,
+	}
+
+	if isVideo {
+		videoFileID, err := services.UploadFile(filePath, folderID, driveFileName)
+		if err != nil {
+			return nil, err
+		}
+		response["video_file_id"] = videoFileID
+		response["video_file_url"] = buildPublicFileURL(c, fileNameOnDisk)
+
+		audioTempPath, err := media.ExtractAudio(filePath)
+		if err != nil {
+			return nil, err
+		}
+
+		audioDriveName := media.BuildAudioFileName(driveFileName, filePath)
+		audioFileNameOnDisk, audioFilePath, err := persistGeneratedFile(uploadDir, audioTempPath, audioDriveName)
+		if err != nil {
+			_ = os.Remove(audioTempPath)
+			return nil, err
+		}
+
+		audioFileID, err := services.UploadFile(audioFilePath, folderID, audioDriveName)
+		if err != nil {
+			return nil, err
+		}
+		response["audio_file_id"] = audioFileID
+		response["audio_file_url"] = buildPublicFileURL(c, audioFileNameOnDisk)
+		return response, nil
+	}
+
+	audioFileID, err := services.UploadFile(filePath, folderID, driveFileName)
+	if err != nil {
+		return nil, err
+	}
+	response["audio_file_id"] = audioFileID
+	response["audio_file_url"] = buildPublicFileURL(c, fileNameOnDisk)
+
+	return response, nil
+}
+
+func persistGeneratedFile(uploadDir, tempPath, preferredName string) (string, string, error) {
+	filename, err := sanitizeFilename(preferredName)
+	if err != nil {
+		return "", "", fmt.Errorf("nome de arquivo inválido para áudio: %w", err)
+	}
+	filename = ensureUniqueFilename(uploadDir, filename)
+	destPath := filepath.Join(uploadDir, filename)
+
+	if err := moveFile(tempPath, destPath); err != nil {
+		return "", "", err
+	}
+
+	return filename, destPath, nil
+}
+
+func moveFile(src, dst string) error {
+	if err := os.Rename(src, dst); err == nil {
+		return nil
+	}
+
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+
+	if _, err := io.Copy(out, in); err != nil {
+		out.Close()
+		_ = os.Remove(dst)
+		return err
+	}
+
+	if err := out.Close(); err != nil {
+		return err
+	}
+	return os.Remove(src)
+}
+
+func saveRemoteFile(body io.Reader, uploadDir, sourcePath string) (string, string, error) {
+	filename, err := generateSafeFilename(filepath.Base(sourcePath))
+	if err != nil {
+		return "", "", err
+	}
+
+	filename = ensureUniqueFilename(uploadDir, filename)
+	destPath := filepath.Join(uploadDir, filename)
+
+	dest, err := os.Create(destPath)
+	if err != nil {
+		return "", "", fmt.Errorf("não foi possível criar arquivo de destino: %w", err)
+	}
+
+	if _, err := io.Copy(dest, body); err != nil {
+		dest.Close()
+		_ = os.Remove(destPath)
+		return "", "", fmt.Errorf("erro ao salvar arquivo baixado: %w", err)
+	}
+
+	if err := dest.Close(); err != nil {
+		_ = os.Remove(destPath)
+		return "", "", fmt.Errorf("erro ao fechar arquivo baixado: %w", err)
+	}
+
+	return filename, destPath, nil
+}
+
+func generateSafeFilename(preferred string) (string, error) {
+	if preferred != "" {
+		if name, err := sanitizeFilename(preferred); err == nil {
+			return name, nil
+		}
+	}
+	fallback := fmt.Sprintf("download-%d.tmp", time.Now().Unix())
+	return sanitizeFilename(fallback)
 }
