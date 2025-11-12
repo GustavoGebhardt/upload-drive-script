@@ -16,6 +16,7 @@ WORKDIR /app
 COPY --from=builder /app/upload-drive-script .
 COPY --from=builder /app/credentials.json .
 RUN mkdir -p /app/upload
+RUN apk add --no-cache ffmpeg
 
 EXPOSE 3000
 
