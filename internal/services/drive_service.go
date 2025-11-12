@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
@@ -31,7 +32,7 @@ func GetDriveServiceConfig() (*oauth2.Config, error) {
 		return nil, fmt.Errorf("criar config OAuth2: %w", err)
 	}
 
-	conf.RedirectURL = fmt.Sprintf("http://%s%s/oauth2callback", config.BaseURL(), config.ServerPort())
+	conf.RedirectURL = buildOAuthRedirectURL()
 	return conf, nil
 }
 
@@ -146,4 +147,36 @@ func UploadFile(filePath string, folderID string, fileName string) (string, erro
 	}
 
 	return res.Id, nil
+}
+
+func buildOAuthRedirectURL() string {
+	if baseURL, ok := config.PublicBaseURL(); ok {
+		return strings.TrimSuffix(baseURL.String(), "/") + "/oauth2callback"
+	}
+
+	host := sanitizeHost(config.BaseURL())
+	port := normalizePort(config.ServerPort())
+	return fmt.Sprintf("http://%s%s/oauth2callback", host, port)
+}
+
+func sanitizeHost(host string) string {
+	host = strings.TrimSpace(host)
+	host = strings.TrimSuffix(host, "/")
+	host = strings.TrimPrefix(host, "http://")
+	host = strings.TrimPrefix(host, "https://")
+	if host == "" {
+		return "localhost"
+	}
+	return host
+}
+
+func normalizePort(port string) string {
+	port = strings.TrimSpace(port)
+	if port == "" {
+		return ":3000"
+	}
+	if strings.HasPrefix(port, ":") {
+		return port
+	}
+	return ":" + port
 }
