@@ -15,6 +15,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"upload-drive-script/internal/media"
 	"upload-drive-script/internal/services"
 )
 
@@ -84,16 +85,42 @@ func Upload(c *gin.Context) {
 
 	fileName := c.PostForm("file_name")
 
+	mimeType, err := media.DetectMimeType(filePath)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	isVideo := media.IsVideoMime(mimeType)
+
 	fileID, err := services.UploadFile(filePath, folderID, fileName)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
+	response := gin.H{
 		"file_id":  fileID,
 		"file_url": buildPublicFileURL(c, fileNameOnDisk),
-	})
+	}
+
+	if isVideo {
+		audioPath, err := media.ExtractAudio(filePath)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		defer os.Remove(audioPath)
+
+		audioFileName := media.BuildAudioFileName(fileName, filePath)
+		audioFileID, err := services.UploadFile(audioPath, folderID, audioFileName)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		response["audio_file_id"] = audioFileID
+	}
+
+	c.JSON(http.StatusOK, response)
 }
 
 func UploadURL(c *gin.Context) {
@@ -164,13 +191,39 @@ func UploadURL(c *gin.Context) {
 
 	fileName := c.PostForm("file_name")
 
+	mimeType, err := media.DetectMimeType(tempPath)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	isVideo := media.IsVideoMime(mimeType)
+
 	fileID, err := services.UploadFile(tempPath, folderID, fileName)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"file_id": fileID})
+	response := gin.H{"file_id": fileID}
+
+	if isVideo {
+		audioPath, err := media.ExtractAudio(tempPath)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		defer os.Remove(audioPath)
+
+		audioFileName := media.BuildAudioFileName(fileName, filepath.Base(parsedURL.Path))
+		audioFileID, err := services.UploadFile(audioPath, folderID, audioFileName)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		response["audio_file_id"] = audioFileID
+	}
+
+	c.JSON(http.StatusOK, response)
 }
 
 func GetUploadedFile(c *gin.Context) {
