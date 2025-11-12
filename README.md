@@ -144,11 +144,11 @@ http://localhost:3000/auth
 
 **Body:** `form-data`
 
-| Campo       | Descrição                       |
-| ----------- | ------------------------------- |
-| `file`      | Arquivo a ser enviado           |
-| `folder_id` | (Opcional) ID da pasta no Drive |
-| `file_name` | (Opcional) Nome do arquivo no Drive |
+| Campo       | Descrição                                         |
+| ----------- | ------------------------------------------------- |
+| `file`      | Arquivo a ser enviado (**somente áudio/vídeo**)    |
+| `folder_id` | (Opcional) ID da pasta no Drive                   |
+| `file_name` | (Opcional) Nome do arquivo no Drive               |
 
 **Exemplo curl:**
 
@@ -159,7 +159,31 @@ curl -X POST http://localhost:3000/upload \
   -F "file_name=novo-nome.mp3"
 ```
 
-Se o arquivo for um vídeo, o backend extrai o áudio automaticamente e envia ao Drive, retornando também `audio_file_id` na resposta.
+Exemplos de retorno:
+
+**Vídeo (com áudio extraído):**
+
+```json
+{
+  "video_file_id": "1f9VOBVoDDc1jb6menibyU0PmPx4xUX5R",
+  "audio_file_id": "18eXy3meiR22pXyZ7ygqjxRWTInHaureR",
+  "video_file_url": "https://upload-script.clientpostforge.com/uploads/video.mp4",
+  "audio_file_url": "https://upload-script.clientpostforge.com/uploads/video-audio.mp3"
+}
+```
+
+**Áudio:**
+
+```json
+{
+  "video_file_id": null,
+  "audio_file_id": "18eXy3meiR22pXyZ7ygqjxRWTInHaureR",
+  "video_file_url": null,
+  "audio_file_url": "https://upload-script.clientpostforge.com/uploads/audio.mp3"
+}
+```
+
+`video_file_url` e `audio_file_url` apontam para cópias locais expostas em `/uploads/<arquivo>`.
 
 ---
 
@@ -169,11 +193,11 @@ Se o arquivo for um vídeo, o backend extrai o áudio automaticamente e envia ao
 
 **Body:** `form-data`
 
-| Campo       | Descrição                       |
-| ----------- | ------------------------------- |
-| `url`       | URL pública do arquivo          |
-| `folder_id` | (Opcional) ID da pasta no Drive |
-| `file_name` | (Opcional) Nome do arquivo no Drive |
+| Campo       | Descrição                                         |
+| ----------- | ------------------------------------------------- |
+| `url`       | URL pública do arquivo (**somente áudio/vídeo**)   |
+| `folder_id` | (Opcional) ID da pasta no Drive                   |
+| `file_name` | (Opcional) Nome do arquivo no Drive               |
 
 **Exemplo curl:**
 
@@ -184,12 +208,13 @@ curl -X POST http://localhost:3000/upload-url \
   -d "file_name=novo-nome.mp3"
 ```
 
-Uploads de vídeo via URL seguem o mesmo fluxo: o arquivo de vídeo é enviado e o áudio extraído é enviado separadamente, retornando `audio_file_id` quando aplicável.
+Uploads via URL retornam o mesmo payload mostrado na rota `/upload`. O serviço baixa o arquivo, o replica em `/uploads` e extrai o áudio sempre que o MIME indicar vídeo.
 
 ---
 
 ## ⚡ Observações
 
+* Apenas arquivos com MIME `audio/*` ou `video/*` são aceitos; qualquer outro tipo retorna HTTP 400.
 * Para arquivos muito grandes (>1GB), o upload é **resumable** e dividido em chunks de 10MB.
 * Tokens OAuth2 são salvos no arquivo definido por `GOOGLE_TOKEN_FILE`; mantenha-o fora do controle de versão.
 * Defina `GOOGLE_AUTH_MODE=service_account` para usar uma Service Account; nesse modo as rotas `/auth` e `/oauth2callback` não ficam disponíveis e o arquivo definido em `GOOGLE_CREDENTIALS_FILE` deve conter o JSON da Service Account.
