@@ -58,12 +58,19 @@ func OAuth2Callback(c *gin.Context) {
 }
 
 func Upload(c *gin.Context) {
-	file, err := c.FormFile("file")
+	// Usar MultipartReader para streaming
+	reader, err := c.Request.MultipartReader()
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Nenhum arquivo enviado"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Falha ao ler multipart request"})
 		return
 	}
 
+	var folderID string
+	var fileName string
+	var driveFileID string
+	var mimeType string
+	var filePath string
+	var fileNameOnDisk string
 	const uploadDir = "upload"
 
 	if err := os.MkdirAll(uploadDir, 0o755); err != nil {
@@ -71,40 +78,147 @@ func Upload(c *gin.Context) {
 		return
 	}
 
-	fileNameOnDisk, err := sanitizeFilename(file.Filename)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	fileNameOnDisk = ensureUniqueFilename(uploadDir, fileNameOnDisk)
-	filePath := filepath.Join(uploadDir, fileNameOnDisk)
-
-	if err := c.SaveUploadedFile(file, filePath); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	folderID := c.PostForm("folder_id")
-
-	fileName := c.PostForm("file_name")
-
-	mimeType, err := media.DetectMimeType(filePath)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	response, err := buildUploadResponse(c, uploadDir, filePath, fileNameOnDisk, folderID, fileName, mimeType)
-	if err != nil {
-		if errors.Is(err, errUnsupportedMediaType) {
-			_ = os.Remove(filePath)
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Apenas arquivos de áudio ou vídeo são permitidos"})
+	for {
+		part, err := reader.NextPart()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Erro ao ler parte do formulário"})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+
+		switch part.FormName() {
+		case "folder_id":
+			buf := new(strings.Builder)
+			if _, err := io.Copy(buf, part); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Erro ao ler folder_id"})
+				return
+			}
+			folderID = buf.String()
+		case "file_name":
+			buf := new(strings.Builder)
+			if _, err := io.Copy(buf, part); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Erro ao ler file_name"})
+				return
+			}
+			fileName = buf.String()
+		case "file":
+			// Processo principal de upload
+			if fileName == "" {
+				fileName = part.FileName()
+			}
+
+			cleanName, err := sanitizeFilename(fileName)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+			fileNameOnDisk = ensureUniqueFilename(uploadDir, cleanName)
+			filePath = filepath.Join(uploadDir, fileNameOnDisk)
+
+			// Criar arquivo local para backup/processamento
+			out, err := os.Create(filePath)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Falha ao criar arquivo local"})
+				return
+			}
+			defer out.Close() // Fecha o arquivo ao final da função, mas fecharemos explicitamente antes do processamento
+
+			// TeeReader: Lê do part -> Escreve no out (disco) -> Retorna para o UploadFileStream
+			tee := io.TeeReader(part, out)
+
+			// Inicia Upload para o Drive usando o stream
+			// O upload lê do 'tee', que lê do 'part' e escreve em 'out' simultaneamente.
+			uploadedID, err := services.UploadFileStream(tee, folderID, fileName)
+
+			// Importante: Fechar o arquivo local explicitamente para garantir flush antes de usar
+			out.Close()
+
+			if err != nil {
+				_ = os.Remove(filePath) // Limpa em caso de erro
+				c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Erro no upload para o Drive: %v", err)})
+				return
+			}
+
+			driveFileID = uploadedID
+
+			// Detectar mime type do arquivo salvo localmente
+			detectedMime, err := media.DetectMimeType(filePath)
+			if err != nil {
+				// Se falhar detecção, tenta pelo header (menos confiável, mas fallback)
+				// Se não, assume erro.
+				// Para robustez, vamos continuar ou retornar erro.
+				// Mas se falhou detect, talvez o arquivo esteja corrompido.
+				_ = os.Remove(filePath)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Erro ao detectar tipo de arquivo"})
+				return
+			}
+			mimeType = detectedMime
+		}
+	}
+
+	// Validar se houve processamento
+	if driveFileID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Nenhum arquivo enviado ou processado"})
 		return
 	}
 
-	c.JSON(http.StatusOK, response)
+	// Validação de MimeType (estava em buildUploadResponse)
+	isVideo := media.IsVideoMime(mimeType)
+	isAudio := media.IsAudioMime(mimeType)
+
+	if !isVideo && !isAudio {
+		_ = os.Remove(filePath)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Apenas arquivos de áudio ou vídeo são permitidos"})
+		return
+	}
+
+	finalResponse := gin.H{
+		"video_file_id":  nil,
+		"audio_file_id":  nil,
+		"video_file_url": nil,
+		"audio_file_url": nil,
+	}
+
+	if isVideo {
+		finalResponse["video_file_id"] = driveFileID
+		finalResponse["video_file_url"] = buildPublicFileURL(c, fileNameOnDisk)
+
+		// Extração de áudio
+		audioTempPath, err := media.ExtractAudio(filePath)
+		if err != nil {
+			// Se falhar converter áudio, retornamos erro? Ou só o vídeo?
+			// Código original retornava erro.
+			_ = os.Remove(filePath)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		audioDriveName := media.BuildAudioFileName(fileName, filePath)
+		audioFileNameOnDisk, audioFilePath, err := persistGeneratedFile(uploadDir, audioTempPath, audioDriveName)
+		if err != nil {
+			_ = os.Remove(audioTempPath)
+			_ = os.Remove(filePath)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		// Upload do áudio (ainda usa arquivo local, tudo bem ser pequeno)
+		audioFileID, err := services.UploadFile(audioFilePath, folderID, audioDriveName)
+		if err != nil {
+			_ = os.Remove(filePath)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		finalResponse["audio_file_id"] = audioFileID
+		finalResponse["audio_file_url"] = buildPublicFileURL(c, audioFileNameOnDisk)
+	} else {
+		finalResponse["audio_file_id"] = driveFileID
+		finalResponse["audio_file_url"] = buildPublicFileURL(c, fileNameOnDisk)
+	}
+
+	c.JSON(http.StatusOK, finalResponse)
 }
 
 func UploadURL(c *gin.Context) {

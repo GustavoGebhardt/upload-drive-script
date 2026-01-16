@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -141,6 +142,29 @@ func UploadFile(filePath string, folderID string, fileName string) (string, erro
 
 	res, err := srv.Files.Create(file).
 		Media(f).
+		Do()
+	if err != nil {
+		return "", err
+	}
+
+	return res.Id, nil
+}
+
+func UploadFileStream(content io.Reader, folderID string, fileName string) (string, error) {
+	srv, err := GetDriveService()
+	if err != nil {
+		return "", err
+	}
+
+	file := &drive.File{
+		Name: fileName,
+	}
+	if folderID != "" {
+		file.Parents = []string{folderID}
+	}
+
+	res, err := srv.Files.Create(file).
+		Media(content).
 		Do()
 	if err != nil {
 		return "", err
