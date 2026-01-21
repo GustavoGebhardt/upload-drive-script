@@ -123,24 +123,32 @@ export HTTP_LISTEN_ADDR=:8080
 
 ## 🔑 Autenticação Google Drive
 
-> Este fluxo é necessário apenas quando `GOOGLE_AUTH_MODE=oauth`. Ao usar `service_account`, não há etapa manual de autorização.
+O serviço agora opera de forma **stateless** em relação à autenticação do usuário para uploads. O token de acesso OAuth2 deve ser obtido pelo cliente (frontend) e passado para este serviço.
 
-1. Com o navegador acesse a rota `/auth`:
+### Fluxo de Autenticação (Centralizado no Frontend)
 
-```
-http://localhost:3000/auth
-```
+1.  O Frontend (`client-post-forge`) realiza o login do usuário com o Google e obtém o escopo `https://www.googleapis.com/auth/drive.file`.
+2.  O Frontend envia o arquivo para este serviço (`/upload` ou `/upload-url`) incluindo o **Access Token** no cabeçalho.
+3.  Este serviço utiliza o token recebido para autenticar diretamente com a API do Google Drive e realizar o upload na conta do usuário.
 
-2. Você será redirecionado para a página de login do Google.
-3. Após autorizar, a callback `/oauth2callback` salvará o token em `token.json`.
+> **Nota:** As rotas `/auth` e `/oauth2callback` ainda existem para fluxos legados ou de manutenção, mas não são utilizadas para o fluxo principal de upload de usuários.
 
 ---
 
 ## 📤 Rotas
 
+Todas as rotas de upload esperam o cabeçalho de autorização:
+
+```http
+Authorization: Bearer <GOOGLE_ACCESS_TOKEN>
+```
+
 ### 1. Upload via form-data
 
 **POST** `/upload`
+
+**Headers:**
+*   `Authorization: Bearer <seu_token_de_acesso>`
 
 **Body:** `form-data`
 
@@ -154,6 +162,7 @@ http://localhost:3000/auth
 
 ```bash
 curl -X POST http://localhost:3000/upload \
+  -H "Authorization: Bearer ya29.a0..." \
   -F "file=@/caminho/para/arquivo.mp3" \
   -F "folder_id=ID_DA_PASTA" \
   -F "file_name=novo-nome.mp3"
@@ -191,6 +200,9 @@ Exemplos de retorno:
 
 **POST** `/upload-url`
 
+**Headers:**
+*   `Authorization: Bearer <seu_token_de_acesso>`
+
 **Body:** `form-data`
 
 | Campo       | Descrição                                         |
@@ -203,6 +215,7 @@ Exemplos de retorno:
 
 ```bash
 curl -X POST http://localhost:3000/upload-url \
+  -H "Authorization: Bearer ya29.a0..." \
   -d "url=https://example.com/audio.mp3" \
   -d "folder_id=ID_DA_PASTA" \
   -d "file_name=novo-nome.mp3"
@@ -214,7 +227,8 @@ Uploads via URL retornam o mesmo payload mostrado na rota `/upload`. O serviço 
 
 ## ⚡ Observações
 
+* **Token Obrigatório:** O token de acesso é mandatório para autenticar o upload na conta do usuário correto.
 * Apenas arquivos com MIME `audio/*` ou `video/*` são aceitos; qualquer outro tipo retorna HTTP 400.
 * Para arquivos muito grandes (>1GB), o upload é **resumable** e dividido em chunks de 10MB.
-* Tokens OAuth2 são salvos no arquivo definido por `GOOGLE_TOKEN_FILE`; mantenha-o fora do controle de versão.
-* Defina `GOOGLE_AUTH_MODE=service_account` para usar uma Service Account; nesse modo as rotas `/auth` e `/oauth2callback` não ficam disponíveis e o arquivo definido em `GOOGLE_CREDENTIALS_FILE` deve conter o JSON da Service Account.
+* Tokens OAuth2 salvos localmente (`token.json`) são ignorados quando o header `Authorization` é fornecido.
+* Defina `GOOGLE_AUTH_MODE=service_account` para usar uma Service Account como fallback global, mas o token do usuário sempre terá prioridade se fornecido.

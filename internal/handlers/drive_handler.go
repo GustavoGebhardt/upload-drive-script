@@ -58,6 +58,13 @@ func OAuth2Callback(c *gin.Context) {
 }
 
 func Upload(c *gin.Context) {
+	// Extract token from header
+	authHeader := c.GetHeader("Authorization")
+	tokenString := ""
+	if strings.HasPrefix(authHeader, "Bearer ") {
+		tokenString = strings.TrimPrefix(authHeader, "Bearer ")
+	}
+
 	// Usar MultipartReader para streaming
 	reader, err := c.Request.MultipartReader()
 	if err != nil {
@@ -130,7 +137,7 @@ func Upload(c *gin.Context) {
 
 			// Inicia Upload para o Drive usando o stream
 			// O upload lê do 'tee', que lê do 'part' e escreve em 'out' simultaneamente.
-			uploadedID, err := services.UploadFileStream(tee, folderID, fileName)
+			uploadedID, err := services.UploadFileStream(tokenString, tee, folderID, fileName)
 
 			// Importante: Fechar o arquivo local explicitamente para garantir flush antes de usar
 			out.Close()
@@ -205,7 +212,7 @@ func Upload(c *gin.Context) {
 		}
 
 		// Upload do áudio (ainda usa arquivo local, tudo bem ser pequeno)
-		audioFileID, err := services.UploadFile(audioFilePath, folderID, audioDriveName)
+		audioFileID, err := services.UploadFile(tokenString, audioFilePath, folderID, audioDriveName)
 		if err != nil {
 			_ = os.Remove(filePath)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -222,6 +229,13 @@ func Upload(c *gin.Context) {
 }
 
 func UploadURL(c *gin.Context) {
+	// Extract token from header
+	authHeader := c.GetHeader("Authorization")
+	tokenString := ""
+	if strings.HasPrefix(authHeader, "Bearer ") {
+		tokenString = strings.TrimPrefix(authHeader, "Bearer ")
+	}
+
 	fileURL := c.PostForm("url")
 	if fileURL == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Nenhuma URL fornecida"})
@@ -292,7 +306,7 @@ func UploadURL(c *gin.Context) {
 		return
 	}
 
-	response, err := buildUploadResponse(c, uploadDir, filePath, fileNameOnDisk, folderID, fileName, mimeType)
+	response, err := buildUploadResponse(c, tokenString, uploadDir, filePath, fileNameOnDisk, folderID, fileName, mimeType)
 	if err != nil {
 		_ = os.Remove(filePath)
 		if errors.Is(err, errUnsupportedMediaType) {
@@ -393,6 +407,7 @@ func buildPublicFileURL(c *gin.Context, filename string) string {
 
 func buildUploadResponse(
 	c *gin.Context,
+	tokenString string,
 	uploadDir string,
 	filePath string,
 	fileNameOnDisk string,
@@ -415,7 +430,7 @@ func buildUploadResponse(
 	}
 
 	if isVideo {
-		videoFileID, err := services.UploadFile(filePath, folderID, driveFileName)
+		videoFileID, err := services.UploadFile(tokenString, filePath, folderID, driveFileName)
 		if err != nil {
 			return nil, err
 		}
@@ -434,7 +449,7 @@ func buildUploadResponse(
 			return nil, err
 		}
 
-		audioFileID, err := services.UploadFile(audioFilePath, folderID, audioDriveName)
+		audioFileID, err := services.UploadFile(tokenString, audioFilePath, folderID, audioDriveName)
 		if err != nil {
 			return nil, err
 		}
@@ -443,7 +458,7 @@ func buildUploadResponse(
 		return response, nil
 	}
 
-	audioFileID, err := services.UploadFile(filePath, folderID, driveFileName)
+	audioFileID, err := services.UploadFile(tokenString, filePath, folderID, driveFileName)
 	if err != nil {
 		return nil, err
 	}

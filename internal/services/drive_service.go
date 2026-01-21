@@ -75,7 +75,14 @@ func LoadToken() (*oauth2.Token, error) {
 	return tok, nil
 }
 
-func GetDriveClient() (*http.Client, error) {
+func GetDriveClient(tokenString string) (*http.Client, error) {
+	if tokenString != "" {
+		token := &oauth2.Token{
+			AccessToken: tokenString,
+		}
+		return oauth2.NewClient(context.Background(), oauth2.StaticTokenSource(token)), nil
+	}
+
 	if config.AuthenticationMode() == config.AuthModeServiceAccount {
 		return getServiceAccountClient()
 	}
@@ -109,16 +116,16 @@ func getServiceAccountClient() (*http.Client, error) {
 	return oauth2.NewClient(context.Background(), creds.TokenSource), nil
 }
 
-func GetDriveService() (*drive.Service, error) {
-	client, err := GetDriveClient()
+func GetDriveService(tokenString string) (*drive.Service, error) {
+	client, err := GetDriveClient(tokenString)
 	if err != nil {
 		return nil, err
 	}
 	return drive.NewService(context.Background(), option.WithHTTPClient(client))
 }
 
-func UploadFile(filePath string, folderID string, fileName string) (string, error) {
-	srv, err := GetDriveService()
+func UploadFile(tokenString string, filePath string, folderID string, fileName string) (string, error) {
+	srv, err := GetDriveService(tokenString)
 	if err != nil {
 		return "", err
 	}
@@ -150,8 +157,8 @@ func UploadFile(filePath string, folderID string, fileName string) (string, erro
 	return res.Id, nil
 }
 
-func UploadFileStream(content io.Reader, folderID string, fileName string) (string, error) {
-	srv, err := GetDriveService()
+func UploadFileStream(tokenString string, content io.Reader, folderID string, fileName string) (string, error) {
+	srv, err := GetDriveService(tokenString)
 	if err != nil {
 		return "", err
 	}
