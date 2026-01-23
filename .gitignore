@@ -6,3 +6,5 @@ token.json
 upload/*
 !upload/.gitkeep
 .gocache
+
+upload-drive-script

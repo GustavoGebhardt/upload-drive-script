@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -21,41 +20,6 @@ import (
 )
 
 var errUnsupportedMediaType = errors.New("tipo de arquivo não suportado")
-
-func Auth(c *gin.Context) {
-	url, err := services.GetAuthURL()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.Redirect(http.StatusFound, url)
-}
-
-func OAuth2Callback(c *gin.Context) {
-	code := c.Query("code")
-	if code == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Nenhum código recebido"})
-		return
-	}
-
-	conf, err := services.GetDriveServiceConfig()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	tok, err := conf.Exchange(context.Background(), code)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	if err := services.SaveToken(tok); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"message": "Autenticado com sucesso!"})
-}
 
 func Upload(c *gin.Context) {
 	// Extract token from header

@@ -14,7 +14,6 @@ Sistema backend em Go para envio de arquivos para o Google Drive. Suporta:
 upload-drive-script/
 ├── go.mod
 ├── go.sum
-├── credentials.json        # Credenciais OAuth2 do Google
 ├── cmd/
 │   ├── main.go
 ├── internal/
@@ -34,7 +33,6 @@ upload-drive-script/
 ## ⚙️ Requisitos
 
 * Go 1.20+
-* Conta Google com OAuth2 credentials (JSON)
 * Variáveis de ambiente opcionais para customização (ver seção Configuração)
 * `ffmpeg` instalado no host (necessário para extrair o áudio dos vídeos)
 
@@ -83,11 +81,9 @@ docker build -t upload-drive-script .
 
 ```bash
 APP_SERVER_PORT=:3000
-GOOGLE_CREDENTIALS_FILE=credentials.json
-GOOGLE_TOKEN_FILE=token.json
 ```
 
-3. Execute o container em segundo plano expondo a porta 3000, carregando o `.env` e montando as credenciais:
+3. Execute o container em segundo plano expondo a porta 3000 e carregando o `.env`:
 
 ```bash
 docker run -d -p 3000:3000 \
@@ -96,7 +92,7 @@ docker run -d -p 3000:3000 \
   upload-drive-script
 ```
 
-4. Ajuste variáveis ou mounts conforme necessário (por exemplo `GOOGLE_TOKEN_FILE`, `APP_SERVER_PORT` ou outro caminho de credenciais). O serviço seguirá disponível em `http://localhost:3000`. Pare o container com `docker stop upload-drive-script`.
+4. O serviço seguirá disponível em `http://localhost:3000`. Pare o container com `docker stop upload-drive-script`.
 
 ---
 
@@ -104,17 +100,12 @@ docker run -d -p 3000:3000 \
 
 | Variável                  | Descrição                                            | Padrão                               |
 |---------------------------|------------------------------------------------------|--------------------------------------|
-| `GOOGLE_CREDENTIALS_FILE` | Caminho para o JSON de credenciais OAuth             | `credentials.json`                   |
-| `GOOGLE_AUTH_MODE`        | Tipo de autenticação: `oauth` ou `service_account`   | `oauth`                              |
-| `GOOGLE_TOKEN_FILE`       | Caminho onde o token OAuth autorizado será persistido | `token.json`                         |
 | `APP_BASE_URL`            | URL base da aplicação                                | `localhost`                          |
-| `GOOGLE_OAUTH_STATE`      | Valor de state usado na autorização OAuth            | `state-token`                        |
 | `APP_SERVER_PORT`         | Endereço/porta que o servidor HTTP deve escutar      | `:3000`                              |
 
 Defina as variáveis antes de executar o binário:
 
 ```bash
-export GOOGLE_CREDENTIALS_FILE=./secrets/credentials.json
 export HTTP_LISTEN_ADDR=:8080
 ./upload-drive-script
 ```
@@ -123,15 +114,13 @@ export HTTP_LISTEN_ADDR=:8080
 
 ## 🔑 Autenticação Google Drive
 
-O serviço agora opera de forma **stateless** em relação à autenticação do usuário para uploads. O token de acesso OAuth2 deve ser obtido pelo cliente (frontend) e passado para este serviço.
+O serviço opera de forma **stateless**. O token de acesso OAuth2 deve ser obtido pelo cliente (frontend) e passado para este serviço.
 
 ### Fluxo de Autenticação (Centralizado no Frontend)
 
 1.  O Frontend (`client-post-forge`) realiza o login do usuário com o Google e obtém o escopo `https://www.googleapis.com/auth/drive.file`.
 2.  O Frontend envia o arquivo para este serviço (`/upload` ou `/upload-url`) incluindo o **Access Token** no cabeçalho.
 3.  Este serviço utiliza o token recebido para autenticar diretamente com a API do Google Drive e realizar o upload na conta do usuário.
-
-> **Nota:** As rotas `/auth` e `/oauth2callback` ainda existem para fluxos legados ou de manutenção, mas não são utilizadas para o fluxo principal de upload de usuários.
 
 ---
 
@@ -230,5 +219,3 @@ Uploads via URL retornam o mesmo payload mostrado na rota `/upload`. O serviço 
 * **Token Obrigatório:** O token de acesso é mandatório para autenticar o upload na conta do usuário correto.
 * Apenas arquivos com MIME `audio/*` ou `video/*` são aceitos; qualquer outro tipo retorna HTTP 400.
 * Para arquivos muito grandes (>1GB), o upload é **resumable** e dividido em chunks de 10MB.
-* Tokens OAuth2 salvos localmente (`token.json`) são ignorados quando o header `Authorization` é fornecido.
-* Defina `GOOGLE_AUTH_MODE=service_account` para usar uma Service Account como fallback global, mas o token do usuário sempre terá prioridade se fornecido.
